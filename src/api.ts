@@ -90,3 +90,4 @@ export async function pingApi(): Promise<boolean> {
   } catch {
     return false;
   }
+}

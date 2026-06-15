@@ -57,12 +57,13 @@ type OrderStatus = "pending" | "completed" | "failed";
 type OrderItem = {
   id: number;
   createdAt: number;
-  username: string; // кто заказал
+  username: string;
   items: { title: string; tariffTitle: string; qty: number; price: number }[];
   total: number;
   method: PayMethodId;
-  cryptoKind?: CryptoKindId; // если оплата криптой
+  cryptoKind?: CryptoKindId;
   status: OrderStatus;
+  kind?: "purchase" | "topup"; // тип заказа: покупка товара или пополнение баланса
 };
 
 type TelegramUser = { first_name?: string; username?: string; photo_url?: string };
@@ -347,8 +348,14 @@ const PLATFORM_ICONS: Record<Platform, string> = {
   "iOS/Android": "https://i.ibb.co/cS7ZS0c5/IMG-1138.png",
 };
 
-// 🛒 Иконка корзины
-const CART_ICON_URL = "https://i.ibb.co/Lz9rtkKw/5-E583-D59-B90-B-446-B-8037-426157-B97-B51.png";
+// ════════════════════════════════════════════════════════════════════════════
+// 🛒 Иконки корзины
+// CART_ICON_URL          → маленькая (нижняя навигация + кнопки "В корзину")
+// CART_BIG_ICON_URL      → большая (на пустой странице корзины с пульсацией)
+// Если оставить пустым — будет показан дефолтный эмодзи 🛒
+// ════════════════════════════════════════════════════════════════════════════
+const CART_ICON_URL = "";
+const CART_BIG_ICON_URL = "";
 
 // ════════════════════════════════════════════════════════════════════════════
 // НАВИГАЦИЯ
@@ -412,19 +419,26 @@ function CategoryIcon({ icon, iconUrl }: { icon: string; iconUrl?: string }) {
 }
 
 function NavIcon({ icon, active }: { icon: string; active: boolean }) {
-  if (icon === "cart") {
-    if (CART_ICON_URL) {
-      return (
-        <img
-          src={CART_ICON_URL}
-          alt=""
-          className={`h-5 w-5 object-contain transition ${active ? "opacity-100" : "opacity-60"}`}
-        />
-      );
-    }
-    return <span className="text-lg">🛒</span>;
-  }
-  return <span className="text-lg">{icon}</span>;
+  // Фиксированный контейнер 24x24 — все иконки одного размера и центрируются
+  return (
+    <span className="flex h-6 w-6 items-center justify-center">
+      {icon === "cart" ? (
+        CART_ICON_URL ? (
+          <img
+            src={CART_ICON_URL}
+            alt=""
+            className={`max-h-full max-w-full object-contain transition ${
+              active ? "opacity-100" : "opacity-60"
+            }`}
+          />
+        ) : (
+          <span className="text-[18px] leading-none">🛒</span>
+        )
+      ) : (
+        <span className="text-[18px] leading-none">{icon}</span>
+      )}
+    </span>
+  );
 }
 
 function PlatformBadge({ platform }: { platform: Platform }) {
@@ -512,6 +526,7 @@ export default function App() {
     cryptoKind?: CryptoKindId;
     stage: "crypto-choose" | "address" | "waiting" | "failed";
     orderId?: number;
+    kind?: "purchase" | "topup"; // тип flow
   } | null>(null);
 
   // ─── Приветственное окно ───
@@ -768,9 +783,20 @@ export default function App() {
     if (cart.length === 0) return;
     vibrate("medium");
     if (method === "crypto") {
-      setPaymentFlow({ method, amount: cartTotal, stage: "crypto-choose" });
+      setPaymentFlow({ method, amount: cartTotal, stage: "crypto-choose", kind: "purchase" });
     } else {
-      setPaymentFlow({ method, amount: cartTotal, stage: "address" });
+      setPaymentFlow({ method, amount: cartTotal, stage: "address", kind: "purchase" });
+    }
+  };
+
+  // Старт пополнения баланса (тот же flow, но kind=topup)
+  const startTopUp = (method: PayMethodId, amountRub: number) => {
+    if (amountRub <= 0) return;
+    vibrate("medium");
+    if (method === "crypto") {
+      setPaymentFlow({ method, amount: amountRub, stage: "crypto-choose", kind: "topup" });
+    } else {
+      setPaymentFlow({ method, amount: amountRub, stage: "address", kind: "topup" });
     }
   };
 
@@ -778,23 +804,38 @@ export default function App() {
   const handleIPaid = async () => {
     if (!paymentFlow) return;
     vibrate("medium");
+
+    const isTopUp = paymentFlow.kind === "topup";
+
+    // Для пополнения — items = одна позиция "Пополнение баланса", для покупки — позиции корзины
+    const orderItems = isTopUp
+      ? [
+          {
+            title: "Пополнение баланса",
+            tariffTitle: formatPrice(paymentFlow.amount),
+            qty: 1,
+            price: paymentFlow.amount,
+          },
+        ]
+      : cart.map((i) => ({
+          title: i.title,
+          tariffTitle: i.tariffTitle,
+          qty: i.qty,
+          price: i.price,
+        }));
+
     const baseOrder: OrderItem = {
       id: Date.now(),
       createdAt: Date.now(),
       username: user.username || "guest",
-      items: cart.map((i) => ({
-        title: i.title,
-        tariffTitle: i.tariffTitle,
-        qty: i.qty,
-        price: i.price,
-      })),
+      items: orderItems,
       total: paymentFlow.amount,
       method: paymentFlow.method,
       cryptoKind: paymentFlow.cryptoKind,
       status: "pending",
+      kind: isTopUp ? "topup" : "purchase",
     };
 
-    // Если API живёт — отправляем на бэк
     if (apiReady) {
       const created = await apiCreateOrder(user.username || "guest", {
         username: user.username || "guest",
@@ -804,16 +845,16 @@ export default function App() {
         cryptoKind: baseOrder.cryptoKind,
       });
       if (created) {
-        setOrders((prev) => [created as OrderItem, ...prev]);
-        setCart([]);
-        setPaymentFlow({ ...paymentFlow, stage: "waiting", orderId: created.id });
+        const withKind = { ...(created as OrderItem), kind: baseOrder.kind };
+        setOrders((prev) => [withKind, ...prev]);
+        if (!isTopUp) setCart([]);
+        setPaymentFlow({ ...paymentFlow, stage: "waiting", orderId: withKind.id });
         return;
       }
     }
 
-    // Fallback на локальное хранение
     setOrders((prev) => [baseOrder, ...prev]);
-    setCart([]);
+    if (!isTopUp) setCart([]);
     setPaymentFlow({ ...paymentFlow, stage: "waiting", orderId: baseOrder.id });
   };
 
@@ -821,13 +862,45 @@ export default function App() {
   const adminUpdateOrder = async (id: number, status: OrderStatus) => {
     vibrate("medium");
 
+    // Найдём заказ для проверки kind
+    const order = orders.find((o) => o.id === id);
+
+    // Если это пополнение и админ принял — начисляем баланс юзеру
+    // (если это сам админ — на свой баланс; если другой — в спец-очередь)
+    if (order && order.kind === "topup" && status === "completed") {
+      const targetUser = order.username.toLowerCase();
+      if (targetUser === (user.username || "").toLowerCase()) {
+        // Сам себе пополнил — сразу на текущий баланс
+        setBalance((p) => p + order.total);
+      } else {
+        // Другому юзеру — кладём в очередь pending-зачислений
+        try {
+          const key = "yuki_pending_topups";
+          const raw = window.localStorage.getItem(key);
+          const list = raw ? (JSON.parse(raw) as { username: string; amount: number; orderId: number }[]) : [];
+          if (!list.find((x) => x.orderId === id)) {
+            list.push({ username: targetUser, amount: order.total, orderId: id });
+            window.localStorage.setItem(key, JSON.stringify(list));
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+
     if (apiReady) {
       const updated = await apiUpdateOrderStatus(user.username || "", id, status);
       if (updated) {
-        setOrders((prev) => prev.map((o) => (o.id === id ? (updated as OrderItem) : o)));
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === id ? { ...(updated as OrderItem), kind: o.kind } : o,
+          ),
+        );
         setNotice(
           status === "completed"
-            ? "Заказ помечен как выполненный"
+            ? order?.kind === "topup"
+              ? `Пополнение @${order.username} на ${formatPrice(order.total)} принято`
+              : "Заказ помечен как выполненный"
             : status === "failed"
               ? "Заказ помечен как ошибка"
               : "Заказ в обработке",
@@ -839,12 +912,34 @@ export default function App() {
     setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status } : o)));
     setNotice(
       status === "completed"
-        ? "Заказ помечен как выполненный"
+        ? order?.kind === "topup"
+          ? `Пополнение @${order.username} на ${formatPrice(order.total)} принято`
+          : "Заказ помечен как выполненный"
         : status === "failed"
           ? "Заказ помечен как ошибка"
           : "Заказ в обработке",
     );
   };
+
+  // При входе юзера — проверяем очередь топ-апов на его имя и зачисляем
+  useEffect(() => {
+    if (!user.username) return;
+    try {
+      const key = "yuki_pending_topups";
+      const raw = window.localStorage.getItem(key);
+      if (!raw) return;
+      const list = JSON.parse(raw) as { username: string; amount: number; orderId: number }[];
+      const my = list.filter((x) => x.username.toLowerCase() === user.username!.toLowerCase());
+      if (my.length === 0) return;
+      const sum = my.reduce((s, x) => s + x.amount, 0);
+      setBalance((p) => p + sum);
+      const rest = list.filter((x) => x.username.toLowerCase() !== user.username!.toLowerCase());
+      window.localStorage.setItem(key, JSON.stringify(rest));
+      setNotice(`Зачислено ${formatPrice(sum)} (подтверждённые пополнения)`);
+    } catch {
+      /* ignore */
+    }
+  }, [user.username]);
 
   // ════════════════════════════════════════════════════════════════════════
   // РЕНДЕР
@@ -1050,10 +1145,8 @@ export default function App() {
                   topUpAmount={topUpAmount}
                   setTopUpAmount={setTopUpAmount}
                   onTopUp={(rub) => {
-                    vibrate("medium");
-                    setBalance((p) => p + rub);
                     setTopUpAmount("");
-                    setNotice(`Баланс пополнен на ${formatPrice(rub)}`);
+                    startTopUp(selectedPayMethod, rub);
                   }}
                 />
               )}
@@ -1101,14 +1194,14 @@ export default function App() {
                       setOpenedProductId(null);
                       setActiveTab(item.id);
                     }}
-                    className={`relative flex flex-col items-center justify-center rounded-[18px] px-1 py-2 text-center transition ${
+                    className={`relative flex h-14 flex-col items-center justify-center gap-1 rounded-[18px] px-1 py-2 text-center transition ${
                       isActive
                         ? "bg-gradient-to-b from-violet-500/35 to-indigo-500/15 text-white"
                         : "text-violet-100/60"
                     }`}
                   >
                     <NavIcon icon={item.icon} active={isActive} />
-                    <span className="mt-1 text-[10px] font-medium">{item.label}</span>
+                    <span className="text-[10px] font-medium leading-none">{item.label}</span>
                     {showBadge && (
                       <span className="absolute right-2 top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-fuchsia-500 px-1 text-[9px] font-bold text-white shadow-[0_0_12px_rgba(232,121,249,0.7)]">
                         {cartCount}
@@ -1567,7 +1660,15 @@ function CartPage({
               style={{ animationDelay: "0.8s" }}
             />
             <div className="yuki-pulse-dot relative flex h-24 w-24 items-center justify-center rounded-full border border-white/10 bg-white/5 text-3xl text-violet-200/70 backdrop-blur-md">
-              🛒
+              {CART_BIG_ICON_URL ? (
+                <img
+                  src={CART_BIG_ICON_URL}
+                  alt=""
+                  className="h-12 w-12 object-contain opacity-80"
+                />
+              ) : (
+                "🛒"
+              )}
             </div>
           </div>
           <h3 className="mt-6 text-2xl font-semibold text-white">Корзина пуста</h3>

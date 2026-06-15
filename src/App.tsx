@@ -585,13 +585,25 @@ export default function App() {
   // Ключ для перерисовки контента с анимацией
   const pageKey = `${activeTab}|${openedProductId ?? ""}|${paymentFlow?.stage ?? ""}|${viewOrderId ?? ""}`;
 
+  // Агрессивный сброс скролла — по всем возможным контейнерам (Telegram WebApp особенности)
   useEffect(() => {
-    // Мгновенный скролл наверх — без эффекта прыжка
-    if (mainRef.current) {
-      mainRef.current.scrollTo({ top: 0, behavior: "auto" });
-    } else {
-      window.scrollTo({ top: 0, behavior: "auto" });
-    }
+    const scrollAllToTop = () => {
+      if (mainRef.current) mainRef.current.scrollTop = 0;
+      window.scrollTo(0, 0);
+      if (document.documentElement) document.documentElement.scrollTop = 0;
+      if (document.body) document.body.scrollTop = 0;
+      document.querySelectorAll(".yuki-scroll").forEach((el) => {
+        (el as HTMLElement).scrollTop = 0;
+      });
+    };
+
+    // Дважды: сразу + после кадра рендера
+    scrollAllToTop();
+    const raf = requestAnimationFrame(() => {
+      scrollAllToTop();
+      requestAnimationFrame(scrollAllToTop);
+    });
+    return () => cancelAnimationFrame(raf);
   }, [pageKey]);
 
   // ─── Persist ───
@@ -838,7 +850,7 @@ export default function App() {
   // РЕНДЕР
   // ════════════════════════════════════════════════════════════════════════
   return (
-    <div className="min-h-screen bg-[#05010d] text-white">
+    <div className="h-screen overflow-hidden bg-[#05010d] text-white">
       <style>{`
         @keyframes yukiPulse {
           0%, 100% { transform: scale(1); opacity: 0.55; }
@@ -887,7 +899,7 @@ export default function App() {
         .yuki-modal-card { animation: yukiPageIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) both; }
       `}</style>
 
-      <div className="relative mx-auto flex min-h-screen w-full max-w-md flex-col overflow-hidden">
+      <div className="relative mx-auto flex h-screen w-full max-w-md flex-col overflow-hidden">
         {/* Фон */}
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute inset-0 bg-[linear-gradient(180deg,#0b0420_0%,#0a0320_40%,#0c0524_100%)]" />

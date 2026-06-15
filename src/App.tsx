@@ -348,7 +348,7 @@ const PLATFORM_ICONS: Record<Platform, string> = {
 };
 
 // 🛒 Иконка корзины
-const CART_ICON_URL = "";
+const CART_ICON_URL = "https://i.ibb.co/Lz9rtkKw/5-E583-D59-B90-B-446-B-8037-426157-B97-B51.png";
 
 // ════════════════════════════════════════════════════════════════════════════
 // НАВИГАЦИЯ

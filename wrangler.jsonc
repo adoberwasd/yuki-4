@@ -1,6 +1,6 @@
 {
   // Имя Worker'а (как у тебя в Cloudflare Dashboard)
-  "name": "yuki-4",
+  "name": "yuki-3",
   "main": "worker/index.ts",
   "compatibility_date": "2025-01-01",
   "compatibility_flags": ["nodejs_compat"],
@@ -19,7 +19,7 @@
   "kv_namespaces": [
     {
       "binding": "YUKI_KV",
-      "id": "6608de77ea8948bdac6683b2e4d3aa71"
+      "id": "PASTE_KV_ID_HERE"
     }
   ],
 

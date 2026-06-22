@@ -74,7 +74,7 @@ type CryptoBotInvoice = {
 
 function normalizeCryptoBotInvoice(raw: any): CryptoBotInvoice | null {
   if (!raw) return null;
-  const payUrl = raw.bot_invoice_url || raw.mini_app_invoice_url || raw.web_app_invoice_url || raw.pay_url;
+  const payUrl = raw.mini_app_invoice_url || raw.bot_invoice_url || raw.web_app_invoice_url || raw.pay_url;
   const invoiceId = Number(raw.invoice_id);
   if (!invoiceId || !payUrl) return null;
   return {
@@ -102,11 +102,7 @@ async function cryptoBotRequest(env: Env, method: string, payload: Record<string
 
   const data = (await response.json()) as any;
   if (!response.ok || !data?.ok) {
-    const details =
-      typeof data?.error === "object"
-        ? [data.error.name, data.error.code].filter(Boolean).join(" ")
-        : data?.error;
-    throw new Error(details || `CryptoBot ${method} failed with HTTP ${response.status}`);
+    throw new Error(data?.error?.name || data?.error || `CryptoBot ${method} failed`);
   }
   return data.result;
 }
@@ -159,28 +155,17 @@ export default {
           }
 
           const kind = body.kind || "order";
-          let result: unknown;
-          try {
-            result = await cryptoBotRequest(env, "createInvoice", {
-              currency_type: "fiat",
-              fiat: "RUB",
-              accepted_assets: "usdt,ton,btc",
-              amount: amount.toFixed(2),
-              description: buildInvoiceDescription(kind, body.items, amount),
-              payload: `yuki:${kind}:${callerUsername}:${Date.now()}`.slice(0, 128),
-              allow_comments: false,
-              allow_anonymous: false,
-              expires_in: 600,
-            });
-          } catch (error) {
-            return json(
-              {
-                error: "cryptobot_create_failed",
-                detail: error instanceof Error ? error.message : String(error),
-              },
-              502,
-            );
-          }
+          const result = await cryptoBotRequest(env, "createInvoice", {
+            currency_type: "fiat",
+            fiat: "RUB",
+            accepted_assets: "USDT,TON,BTC",
+            amount: amount.toFixed(2),
+            description: buildInvoiceDescription(kind, body.items, amount),
+            payload: `yuki:${kind}:${callerUsername}:${Date.now()}`.slice(0, 128),
+            allow_comments: false,
+            allow_anonymous: false,
+            expires_in: 600,
+          });
 
           const invoice = normalizeCryptoBotInvoice(result);
           if (!invoice) return json({ error: "bad cryptobot response" }, 502);
@@ -190,20 +175,9 @@ export default {
         // /api/cryptobot/invoice/:id — проверить статус счёта Crypto Bot
         const cryptoInvoiceMatch = path.match(/^\/api\/cryptobot\/invoice\/(\d+)$/);
         if (cryptoInvoiceMatch && request.method === "GET") {
-          let result: unknown;
-          try {
-            result = await cryptoBotRequest(env, "getInvoices", {
-              invoice_ids: cryptoInvoiceMatch[1],
-            });
-          } catch (error) {
-            return json(
-              {
-                error: "cryptobot_check_failed",
-                detail: error instanceof Error ? error.message : String(error),
-              },
-              502,
-            );
-          }
+          const result = await cryptoBotRequest(env, "getInvoices", {
+            invoice_ids: cryptoInvoiceMatch[1],
+          });
           const rawInvoice = Array.isArray(result?.items)
             ? result.items[0]
             : Array.isArray(result)

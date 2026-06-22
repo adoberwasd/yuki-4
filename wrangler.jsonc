@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "yuki-5",
+  "name": "yuki-45",
   "main": "worker/index.ts",
   "compatibility_date": "2025-01-01",
   "build": {

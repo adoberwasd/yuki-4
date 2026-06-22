@@ -999,13 +999,13 @@ function NavIcon({ icon, active }: { icon: string; active: boolean }) {
         <img
           src={CART_ICON_URL}
           alt=""
-          className={`h-5 w-5 object-contain transition ${active ? "opacity-100" : "opacity-60"}`}
+          className={`h-8 w-8 object-contain transition ${active ? "opacity-100" : "opacity-70"}`}
         />
       );
     }
-    return <span className="text-lg">🛒</span>;
+    return <span className="text-[28px] leading-none">🛒</span>;
   }
-  return <span className="text-lg">{icon}</span>;
+  return <span className="text-[24px] leading-none">{icon}</span>;
 }
 
 function PlatformBadge({ platform }: { platform: Platform }) {
@@ -1861,16 +1861,20 @@ export default function App() {
                       setOpenedProductId(null);
                       setActiveTab(item.id);
                     }}
-                    className={`relative flex flex-col items-center justify-center rounded-[18px] px-1 py-2 text-center transition ${
+                    className={`relative flex h-[68px] flex-col items-center justify-center rounded-[18px] px-1 py-2 text-center transition ${
                       isActive
                         ? "bg-gradient-to-b from-violet-500/35 to-indigo-500/15 text-white"
                         : "text-violet-100/60"
                     }`}
                   >
-                    <NavIcon icon={item.icon} active={isActive} />
-                    <span className="mt-1 text-[10px] font-medium">{item.label}</span>
+                    <span className="flex h-8 w-9 items-center justify-center">
+                      <NavIcon icon={item.icon} active={isActive} />
+                    </span>
+                    <span className="mt-1 block h-3 text-[10px] font-medium leading-3">
+                      {item.label}
+                    </span>
                     {showBadge && (
-                      <span className="absolute right-2 top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-fuchsia-500 px-1 text-[9px] font-bold text-white shadow-[0_0_12px_rgba(232,121,249,0.7)]">
+                      <span className="absolute right-2 top-2 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-fuchsia-500 px-1 text-[9px] font-bold text-white shadow-[0_0_12px_rgba(232,121,249,0.7)]">
                         {cartCount}
                       </span>
                     )}
@@ -2444,12 +2448,12 @@ function ProductPage({
                 <button
                   type="button"
                   onClick={() => onAddToCart(product, tariff)}
-                  className="col-span-1 flex items-center justify-center gap-1.5 bg-violet-500/20 py-3.5 text-[11px] font-semibold text-violet-50 active:scale-[0.99]"
+                  className="col-span-1 flex items-center justify-center gap-2 bg-violet-500/20 py-3.5 text-sm font-semibold text-violet-50 active:scale-[0.99]"
                 >
                   {CART_ICON_URL ? (
-                    <img src={CART_ICON_URL} alt="" className="h-4 w-4 object-contain" />
+                    <img src={CART_ICON_URL} alt="" className="h-8 w-8 shrink-0 object-contain" />
                   ) : (
-                    <span className="text-base">🛒</span>
+                    <span className="text-[28px] leading-none">🛒</span>
                   )}
                   <span>В корзину</span>
                 </button>
@@ -2519,7 +2523,15 @@ function CartPage({
               style={{ animationDelay: "0.8s" }}
             />
             <div className="yuki-pulse-dot relative flex h-24 w-24 items-center justify-center rounded-full border border-white/10 bg-white/5 text-3xl text-violet-200/70 backdrop-blur-md">
-              🛒
+              {CART_ICON_URL ? (
+                <img
+                  src={CART_ICON_URL}
+                  alt=""
+                  className="h-14 w-14 object-contain opacity-80 drop-shadow-[0_6px_18px_rgba(0,0,0,0.45)]"
+                />
+              ) : (
+                <span className="text-[42px] leading-none">🛒</span>
+              )}
             </div>
           </div>
           <h3 className="mt-6 text-2xl font-semibold text-white">Корзина пуста</h3>

@@ -15,8 +15,8 @@
   "kv_namespaces": [
     {
       "binding": "YUKI_KV",
-      "id": "PASTE_YUKI_KV_NAMESPACE_ID_HERE",
-      "preview_id": "PASTE_YUKI_KV_PREVIEW_ID_HERE"
+      "id": "6608de77ea8948bdac6683b2e4d3aa71",
+      "preview_id": "6608de77ea8948bdac6683b2e4d3aa71"
     }
   ]
 }

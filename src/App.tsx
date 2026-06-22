@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  createCryptoBotInvoice as apiCreateCryptoBotInvoice,
   createOrder as apiCreateOrder,
+  fetchCryptoBotInvoice as apiFetchCryptoBotInvoice,
   fetchOrders as apiFetchOrders,
   pingApi,
   resetAllOrders as apiResetAllOrders,
   resetTestOrders as apiResetTestOrders,
   updateOrderStatus as apiUpdateOrderStatus,
+  type CryptoBotInvoice,
 } from "./api";
 import { cn } from "./utils/cn";
 
@@ -84,6 +87,8 @@ declare global {
       WebApp?: {
         ready: () => void;
         expand: () => void;
+        openTelegramLink?: (url: string) => void;
+        openLink?: (url: string) => void;
         setHeaderColor?: (color: string) => void;
         setBackgroundColor?: (color: string) => void;
         HapticFeedback?: {
@@ -1140,6 +1145,8 @@ export default function App() {
     kind: "order" | "topup";
     source?: "cart" | "direct";
     items?: OrderItem["items"];
+    cryptoBotInvoiceId?: number;
+    cryptoBotPayUrl?: string;
   } | null>(null);
 
   const [showWelcome, setShowWelcome] = useState<boolean>(() => {
@@ -1423,10 +1430,36 @@ export default function App() {
     });
   };
 
+  const ensureCryptoBotPaid = async () => {
+    if (!paymentFlow || paymentFlow.method !== "cryptobot") return true;
+    if (!paymentFlow.cryptoBotInvoiceId) {
+      setNotice("Счёт Crypto Bot ещё создаётся. Подожди пару секунд.");
+      return false;
+    }
+
+    const invoice = await apiFetchCryptoBotInvoice(
+      user.username || "guest",
+      paymentFlow.cryptoBotInvoiceId,
+    );
+
+    if (!invoice) {
+      setNotice("Не удалось проверить счёт Crypto Bot");
+      return false;
+    }
+
+    if (invoice.status !== "paid") {
+      setNotice("Crypto Bot ещё не видит оплату. Оплати счёт и попробуй снова.");
+      return false;
+    }
+
+    return true;
+  };
+
   // Юзер нажал "Я оплатил" (корзина)
   const handleIPaid = async () => {
     if (!paymentFlow) return;
     vibrate("medium");
+    if (!(await ensureCryptoBotPaid())) return;
     const baseOrder: OrderItem = {
       id: Date.now(),
       createdAt: Date.now(),
@@ -1474,6 +1507,7 @@ export default function App() {
   const handleTopUpIPaid = async () => {
     if (!paymentFlow) return;
     vibrate("medium");
+    if (!(await ensureCryptoBotPaid())) return;
     const topUpOrder: OrderItem = {
       id: Date.now(),
       createdAt: Date.now(),
@@ -1699,9 +1733,17 @@ export default function App() {
               paymentFlow.kind === "topup" ? (
                 <TopUpPaymentScreen
                   flow={paymentFlow}
+                  username={user.username || "guest"}
                   onClose={() => setPaymentFlow(null)}
                   onCryptoPick={(kind) =>
                     setPaymentFlow({ ...paymentFlow, cryptoKind: kind, stage: "address" })
+                  }
+                  onCryptoBotInvoice={(invoice) =>
+                    setPaymentFlow({
+                      ...paymentFlow,
+                      cryptoBotInvoiceId: invoice.invoiceId,
+                      cryptoBotPayUrl: invoice.payUrl,
+                    })
                   }
                   onIPaid={handleTopUpIPaid}
                   onGoToOrders={() => {
@@ -1716,9 +1758,17 @@ export default function App() {
               ) : (
                 <PaymentScreen
                   flow={paymentFlow}
+                  username={user.username || "guest"}
                   onClose={() => setPaymentFlow(null)}
                   onCryptoPick={(kind) =>
                     setPaymentFlow({ ...paymentFlow, cryptoKind: kind, stage: "address" })
+                  }
+                  onCryptoBotInvoice={(invoice) =>
+                    setPaymentFlow({
+                      ...paymentFlow,
+                      cryptoBotInvoiceId: invoice.invoiceId,
+                      cryptoBotPayUrl: invoice.payUrl,
+                    })
                   }
                   onIPaid={handleIPaid}
                   onBackToCatalog={() => {
@@ -2671,8 +2721,10 @@ function CartPage({
 // ════════════════════════════════════════════════════════════════════════════
 function PaymentScreen({
   flow,
+  username,
   onClose,
   onCryptoPick,
+  onCryptoBotInvoice,
   onIPaid,
   onBackToCatalog,
   onGoToOrders,
@@ -2683,9 +2735,15 @@ function PaymentScreen({
     cryptoKind?: CryptoKindId;
     stage: "crypto-choose" | "address" | "waiting" | "failed";
     orderId?: number;
+    kind?: "order" | "topup";
+    items?: OrderItem["items"];
+    cryptoBotInvoiceId?: number;
+    cryptoBotPayUrl?: string;
   };
+  username: string;
   onClose: () => void;
   onCryptoPick: (k: CryptoKindId) => void;
+  onCryptoBotInvoice: (invoice: CryptoBotInvoice) => void;
   onIPaid: () => void;
   onBackToCatalog: () => void;
   onGoToOrders: () => void;
@@ -2702,6 +2760,12 @@ function PaymentScreen({
         method={method}
         amount={flow.amount}
         cryptoKind={flow.cryptoKind}
+        username={username}
+        flowKind={flow.kind ?? "order"}
+        items={flow.items}
+        cryptoBotInvoiceId={flow.cryptoBotInvoiceId}
+        cryptoBotPayUrl={flow.cryptoBotPayUrl}
+        onCryptoBotInvoice={onCryptoBotInvoice}
         onClose={onClose}
         onIPaid={onIPaid}
       />
@@ -2720,8 +2784,10 @@ function PaymentScreen({
 // ════════════════════════════════════════════════════════════════════════════
 function TopUpPaymentScreen({
   flow,
+  username,
   onClose,
   onCryptoPick,
+  onCryptoBotInvoice,
   onIPaid,
   onGoToOrders,
   onGoToBalance,
@@ -2731,9 +2797,15 @@ function TopUpPaymentScreen({
     amount: number;
     cryptoKind?: CryptoKindId;
     stage: "crypto-choose" | "address" | "waiting" | "failed";
+    kind?: "order" | "topup";
+    items?: OrderItem["items"];
+    cryptoBotInvoiceId?: number;
+    cryptoBotPayUrl?: string;
   };
+  username: string;
   onClose: () => void;
   onCryptoPick: (k: CryptoKindId) => void;
+  onCryptoBotInvoice: (invoice: CryptoBotInvoice) => void;
   onIPaid: () => void;
   onGoToOrders: () => void;
   onGoToBalance: () => void;
@@ -2750,6 +2822,12 @@ function TopUpPaymentScreen({
         method={method}
         amount={flow.amount}
         cryptoKind={flow.cryptoKind}
+        username={username}
+        flowKind={flow.kind ?? "topup"}
+        items={flow.items}
+        cryptoBotInvoiceId={flow.cryptoBotInvoiceId}
+        cryptoBotPayUrl={flow.cryptoBotPayUrl}
+        onCryptoBotInvoice={onCryptoBotInvoice}
         onClose={onClose}
         onIPaid={onIPaid}
       />
@@ -2884,17 +2962,32 @@ function AddressScreen({
   method,
   amount,
   cryptoKind,
+  username,
+  flowKind,
+  items,
+  cryptoBotInvoiceId,
+  cryptoBotPayUrl,
+  onCryptoBotInvoice,
   onClose,
   onIPaid,
 }: {
   method: PayMethod;
   amount: number;
   cryptoKind?: CryptoKindId;
+  username: string;
+  flowKind: "order" | "topup";
+  items?: OrderItem["items"];
+  cryptoBotInvoiceId?: number;
+  cryptoBotPayUrl?: string;
+  onCryptoBotInvoice: (invoice: CryptoBotInvoice) => void;
   onClose: () => void;
   onIPaid: () => void;
 }) {
   const [secLeft, setSecLeft] = useState(PAYMENT_TIMER_SECONDS);
   const [copied, setCopied] = useState(false);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoiceError, setInvoiceError] = useState("");
+  const [invoiceRequested, setInvoiceRequested] = useState(false);
 
   useEffect(() => {
     if (secLeft <= 0) return;
@@ -2913,7 +3006,7 @@ function AddressScreen({
     : isTransfer
       ? PAYMENT_TRANSFER_PHONE_NUMBER
       : isCryptoBot
-        ? PAYMENT_CRYPTOBOT_REQUISITE
+        ? cryptoBotPayUrl || PAYMENT_CRYPTOBOT_REQUISITE
         : PAYMENT_STARS_REQUISITE;
   const strictTitle = isCrypto
     ? `СТРОГО ${coin?.symbol ?? "CRYPTO"} НА ЭТОТ АДРЕС`
@@ -2934,8 +3027,33 @@ function AddressScreen({
     : isTransfer
       ? "Номер телефона"
       : isCryptoBot
-        ? "Crypto Bot реквизит"
+        ? "Crypto Bot invoice"
         : "Stars реквизит";
+
+  useEffect(() => {
+    if (!isCryptoBot || cryptoBotInvoiceId || invoiceLoading || invoiceRequested) return;
+    let cancelled = false;
+
+    setInvoiceRequested(true);
+    setInvoiceLoading(true);
+    setInvoiceError("");
+    apiCreateCryptoBotInvoice(username, { amount, kind: flowKind, items })
+      .then((invoice) => {
+        if (cancelled) return;
+        if (invoice) onCryptoBotInvoice(invoice);
+        else setInvoiceError("Не удалось создать счёт Crypto Bot");
+      })
+      .catch(() => {
+        if (!cancelled) setInvoiceError("Crypto Bot API недоступен");
+      })
+      .finally(() => {
+        if (!cancelled) setInvoiceLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [amount, cryptoBotInvoiceId, flowKind, invoiceLoading, invoiceRequested, isCryptoBot, items, onCryptoBotInvoice, username]);
 
   const copy = () => {
     navigator.clipboard?.writeText(requisite).then(() => {
@@ -2945,6 +3063,16 @@ function AddressScreen({
   };
 
   const pct = (secLeft / PAYMENT_TIMER_SECONDS) * 100;
+  const canConfirmPayment = secLeft > 0 && (!isCryptoBot || Boolean(cryptoBotInvoiceId));
+  const openCryptoBotInvoice = () => {
+    if (!requisite) return;
+    if (requisite.startsWith("https://t.me/")) {
+      window.Telegram?.WebApp?.openTelegramLink?.(requisite);
+    } else {
+      window.Telegram?.WebApp?.openLink?.(requisite);
+    }
+    window.open(requisite, "_blank", "noopener,noreferrer");
+  };
 
   return (
     <div className="space-y-5">
@@ -3017,16 +3145,34 @@ function AddressScreen({
             {requisiteLabel}
           </div>
           <div className="mt-2 break-all rounded-2xl border border-sky-300/35 bg-sky-500/10 px-4 py-4 text-sm font-mono font-semibold leading-6 text-sky-200">
-            {requisite}
+            {isCryptoBot && invoiceLoading
+              ? "Создаём счёт Crypto Bot..."
+              : requisite}
           </div>
+          {invoiceError && (
+            <div className="mt-2 rounded-2xl border border-red-300/25 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+              {invoiceError}
+            </div>
+          )}
         </div>
+
+        {isCryptoBot && cryptoBotInvoiceId && (
+          <button
+            type="button"
+            onClick={openCryptoBotInvoice}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-sky-500 via-cyan-500 to-blue-500 px-4 py-3 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(56,189,248,0.3)] active:scale-95"
+          >
+            Открыть счёт в Crypto Bot
+          </button>
+        )}
 
         <button
           type="button"
           onClick={copy}
+          disabled={isCryptoBot && !cryptoBotInvoiceId}
           className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-500 px-4 py-3 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(56,189,248,0.3)] active:scale-95"
         >
-          {copied ? "✓ Скопировано" : "📋 Скопировать"}
+          {copied ? "✓ Скопировано" : isCryptoBot ? "📋 Скопировать ссылку счёта" : "📋 Скопировать"}
         </button>
       </SectionCard>
 
@@ -3068,14 +3214,14 @@ function AddressScreen({
         <button
           type="button"
           onClick={onIPaid}
-          disabled={secLeft <= 0}
+          disabled={!canConfirmPayment}
           className={`w-full rounded-2xl px-5 py-4 text-base font-semibold transition ${
-            secLeft > 0
+            canConfirmPayment
               ? "bg-gradient-to-r from-fuchsia-500 via-violet-500 to-indigo-500 text-white shadow-[0_14px_40px_rgba(168,85,247,0.4)] active:scale-[0.99]"
               : "cursor-not-allowed border border-white/10 bg-white/5 text-violet-100/40"
           }`}
         >
-          Я оплатил
+          {isCryptoBot && !cryptoBotInvoiceId ? "Счёт создаётся..." : "Я оплатил"}
         </button>
         <button
           type="button"

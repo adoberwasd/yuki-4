@@ -31,9 +31,12 @@ interface Env {
   YUKI_KV: KVNamespace;
   // Статика (привязка в wrangler.jsonc через assets)
   ASSETS: Fetcher;
+  // Secret: npx wrangler secret put CRYPTOBOT_TOKEN
+  CRYPTOBOT_TOKEN?: string;
 }
 
 const KV_KEY = "orders";
+const CRYPTOBOT_API_BASE = "https://pay.crypt.bot/api";
 
 // Список админов (синхронизирован с фронтом)
 const ADMIN_USERNAMES = ["samarskiyyyy", "ceoclott"];
@@ -61,6 +64,57 @@ async function writeOrders(env: Env, orders: OrderItem[]) {
   await env.YUKI_KV.put(KV_KEY, JSON.stringify(orders));
 }
 
+type CryptoBotInvoice = {
+  invoiceId: number;
+  status: string;
+  payUrl: string;
+  amount?: string;
+  fiat?: string;
+};
+
+function normalizeCryptoBotInvoice(raw: any): CryptoBotInvoice | null {
+  if (!raw) return null;
+  const payUrl = raw.bot_invoice_url || raw.mini_app_invoice_url || raw.web_app_invoice_url || raw.pay_url;
+  const invoiceId = Number(raw.invoice_id);
+  if (!invoiceId || !payUrl) return null;
+  return {
+    invoiceId,
+    status: String(raw.status || "active"),
+    payUrl: String(payUrl),
+    amount: raw.amount ? String(raw.amount) : undefined,
+    fiat: raw.fiat ? String(raw.fiat) : undefined,
+  };
+}
+
+async function cryptoBotRequest(env: Env, method: string, payload: Record<string, unknown>) {
+  if (!env.CRYPTOBOT_TOKEN) {
+    throw new Error("CRYPTOBOT_TOKEN secret is not configured");
+  }
+
+  const response = await fetch(`${CRYPTOBOT_API_BASE}/${method}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "Crypto-Pay-API-Token": env.CRYPTOBOT_TOKEN,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = (await response.json()) as any;
+  if (!response.ok || !data?.ok) {
+    throw new Error(data?.error?.name || data?.error || `CryptoBot ${method} failed`);
+  }
+  return data.result;
+}
+
+function buildInvoiceDescription(kind: string, items: OrderItem["items"] | undefined, amount: number) {
+  if (kind === "topup") return `YUKI пополнение баланса на ${amount} RUB`;
+  const first = items?.[0];
+  if (!first) return `YUKI заказ на ${amount} RUB`;
+  const tail = items && items.length > 1 ? ` + ещё ${items.length - 1}` : "";
+  return `YUKI: ${first.title} (${first.tariffTitle})${tail}`.slice(0, 1024);
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -84,6 +138,54 @@ export default {
         // /api/health
         if (path === "/api/health") {
           return json({ ok: true, time: Date.now() });
+        }
+
+        // /api/cryptobot/invoice — создать счёт Crypto Bot (mainnet @CryptoBot)
+        if (path === "/api/cryptobot/invoice" && request.method === "POST") {
+          const callerUsername = request.headers.get("x-yuki-user") || "guest";
+          const body = (await request.json()) as {
+            amount?: number;
+            kind?: "order" | "topup";
+            items?: OrderItem["items"];
+          };
+
+          const amount = Number(body.amount);
+          if (!Number.isFinite(amount) || amount <= 0) {
+            return json({ error: "bad amount" }, 400);
+          }
+
+          const kind = body.kind || "order";
+          const result = await cryptoBotRequest(env, "createInvoice", {
+            currency_type: "fiat",
+            fiat: "RUB",
+            accepted_assets: "USDT,TON,BTC",
+            amount: amount.toFixed(2),
+            description: buildInvoiceDescription(kind, body.items, amount),
+            payload: `yuki:${kind}:${callerUsername}:${Date.now()}`.slice(0, 128),
+            allow_comments: false,
+            allow_anonymous: false,
+            expires_in: 600,
+          });
+
+          const invoice = normalizeCryptoBotInvoice(result);
+          if (!invoice) return json({ error: "bad cryptobot response" }, 502);
+          return json({ ok: true, invoice });
+        }
+
+        // /api/cryptobot/invoice/:id — проверить статус счёта Crypto Bot
+        const cryptoInvoiceMatch = path.match(/^\/api\/cryptobot\/invoice\/(\d+)$/);
+        if (cryptoInvoiceMatch && request.method === "GET") {
+          const result = await cryptoBotRequest(env, "getInvoices", {
+            invoice_ids: cryptoInvoiceMatch[1],
+          });
+          const rawInvoice = Array.isArray(result?.items)
+            ? result.items[0]
+            : Array.isArray(result)
+              ? result[0]
+              : result;
+          const invoice = normalizeCryptoBotInvoice(rawInvoice);
+          if (!invoice) return json({ error: "invoice not found" }, 404);
+          return json({ ok: true, invoice });
         }
 
         // /api/orders

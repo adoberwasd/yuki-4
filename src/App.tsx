@@ -439,8 +439,8 @@ const products: Product[] = [
     short: "Премиум для аккаунта Telegram",
     description:
       "Оформление Telegram Premium на выбранный срок. Подходит для личного аккаунта или подарка.",
-    image: "/images/products/telegram-premium.svg",
-    video: "",
+    image: "https://i.ibb.co/CKyWcTgY/IMG-1399.png",
+    video: "https://i.ibb.co/CKyWcTgY/IMG-1399.png",
     note: "После оплаты заявка уйдёт на проверку. Для выдачи понадобится username получателя.",
     infoUrl: "",
     platform: "iOS/Android",

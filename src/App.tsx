@@ -3043,8 +3043,12 @@ function AddressScreen({
         if (invoice) onCryptoBotInvoice(invoice);
         else setInvoiceError("Не удалось создать счёт Crypto Bot");
       })
-      .catch(() => {
-        if (!cancelled) setInvoiceError("Crypto Bot API недоступен");
+      .catch((error) => {
+        if (!cancelled) {
+          setInvoiceError(
+            error instanceof Error ? error.message : "Crypto Bot API недоступен",
+          );
+        }
       })
       .finally(() => {
         if (!cancelled) setInvoiceLoading(false);
@@ -3152,6 +3156,16 @@ function AddressScreen({
           {invoiceError && (
             <div className="mt-2 rounded-2xl border border-red-300/25 bg-red-500/10 px-4 py-3 text-sm text-red-200">
               {invoiceError}
+              <button
+                type="button"
+                onClick={() => {
+                  setInvoiceError("");
+                  setInvoiceRequested(false);
+                }}
+                className="mt-3 w-full rounded-xl border border-red-300/25 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-100"
+              >
+                Повторить создание счёта
+              </button>
             </div>
           )}
         </div>

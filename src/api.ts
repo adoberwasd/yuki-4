@@ -20,6 +20,14 @@ export type ApiOrder = {
   kind?: "order" | "topup";
 };
 
+export type CryptoBotInvoice = {
+  invoiceId: number;
+  status: "active" | "paid" | "expired" | string;
+  payUrl: string;
+  amount?: string;
+  fiat?: string;
+};
+
 const API_BASE = "/api";
 
 function authHeaders(username: string): HeadersInit {
@@ -108,6 +116,46 @@ export async function resetAllOrders(adminUsername: string): Promise<number | nu
     if (!r.ok) return null;
     const data = (await r.json()) as { removed?: number };
     return data.removed ?? 0;
+  } catch {
+    return null;
+  }
+}
+
+/** Создать счёт Crypto Bot через backend. Токен хранится только в Cloudflare Worker secret. */
+export async function createCryptoBotInvoice(
+  username: string,
+  payload: {
+    amount: number;
+    kind: "order" | "topup";
+    items?: { title: string; tariffTitle: string; qty: number; price: number }[];
+  },
+): Promise<CryptoBotInvoice | null> {
+  try {
+    const r = await fetch(`${API_BASE}/cryptobot/invoice`, {
+      method: "POST",
+      headers: authHeaders(username),
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) return null;
+    const data = (await r.json()) as { invoice?: CryptoBotInvoice };
+    return data.invoice ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Проверить статус счёта Crypto Bot. */
+export async function fetchCryptoBotInvoice(
+  username: string,
+  invoiceId: number,
+): Promise<CryptoBotInvoice | null> {
+  try {
+    const r = await fetch(`${API_BASE}/cryptobot/invoice/${invoiceId}`, {
+      headers: authHeaders(username),
+    });
+    if (!r.ok) return null;
+    const data = (await r.json()) as { invoice?: CryptoBotInvoice };
+    return data.invoice ?? null;
   } catch {
     return null;
   }

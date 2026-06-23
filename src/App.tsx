@@ -157,7 +157,7 @@ const categories: {
   iconUrl: string; // ← вставь сюда прямую ссылку на PNG-иконку
 }[] = [
   { id: "all", title: "YUKI Soft", short: "Все товары", icon: "✦", iconUrl: "" },
-  { id: "standoff2", title: "Standoff 2", short: "Игровой софт", icon: "🎯", iconUrl: "" },
+  { id: "standoff2", title: "Standoff 2", short: "Игровой софт", icon: "🎯", iconUrl: "https://i.ibb.co/67G4XKLw/38489-E7-D-2-A8-E-4021-B7-A3-CAA09-FFC17-C8.png" },
   { id: "cs2", title: "CS2", short: "Конфиги и утилиты", icon: "⚡", iconUrl: "" },
   { id: "valorant", title: "Valorant", short: "Настройки и наборы", icon: "💎", iconUrl: "" },
   { id: "brawlstars", title: "Brawl Stars", short: "Мобильные товары", icon: "🌟", iconUrl: "" },
